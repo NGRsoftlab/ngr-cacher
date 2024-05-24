@@ -10,10 +10,10 @@ import "github.com/NGRsoftlab/ngr-cacher"
 # params
 ```
 Cache:
-    sync.RWMutex - 
+    sync.RWMutex - items map protection mutex
     items - map[string]interface{}, items map
-    defaultExpiration - default expiration time to delete items, which exceeded it
-    cleanupInterval - GC iteration timeout
+    defaultExpiration - time.Duration, default expiration time to delete items, which exceeded it
+    cleanupInterval - time.Duration, GC iteration timeout
     
 Item:
     Value - interface{}
