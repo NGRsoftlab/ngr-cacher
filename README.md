@@ -7,6 +7,27 @@ In last version onDelete item function can be specified (experimental)
 import "github.com/NGRsoftlab/ngr-cacher"
 ```
 
+# params
+```
+Cache:
+    sync.RWMutex - 
+    items - map[string]interface{}, items map
+    defaultExpiration - default expiration time to delete items, which exceeded it
+    cleanupInterval - GC iteration timeout
+    
+Item:
+    Value - interface{}
+	Expiration - int64, expiration time of item
+	Created - time.Time, item creation time
+	Options - ItemOptions, experimental, item specific params
+
+ItemOptions:
+    NeedOnDelete - bool, on/off using on-delete func when item's deleted from cache
+	OnDeleteFunc - func(item interface{}) error, on-delete func
+	NeedRefresh - bool, on/off expiration time update when item't got from cache
+	refreshDuration - time.Duration, expiration item timeout backup for refreshing
+```
+
 # plain example
 ```
 // create cache instance with default expiration time = 5min, GC iteration timeout = 10min
