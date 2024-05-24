@@ -13,7 +13,10 @@ import (
 
 func TestPlainSetGetDeleteScenario(t *testing.T) {
 	locCache := New(5*time.Minute, 10*time.Minute)
-	locCache.Set("a", "aaa", 60*time.Minute)
+
+	// no need refresh
+	locCache.Set("a", "aaa", 10*time.Second)
+	time.Sleep(9 * time.Second)
 
 	k, ok := locCache.Get("a")
 	if !ok {
@@ -24,9 +27,65 @@ func TestPlainSetGetDeleteScenario(t *testing.T) {
 		}
 	}
 
+	// no need refresh
+	locCache.Set("b", "bbb", 10*time.Second, ItemOptions{
+		NeedRefresh: false,
+	})
+	time.Sleep(9 * time.Second)
+
+	k, ok = locCache.Get("b")
+	if !ok {
+		t.Error("Bad TestSet2")
+	} else {
+		if k != "bbb" {
+			t.Error("Expected not this")
+		}
+	}
+
+	// wait more time (> 10*time.Second after set operation) to check expiration refresh
+	time.Sleep(6 * time.Second)
+	k, ok = locCache.Get("b")
+	if ok {
+		t.Error("Bad TestSet3")
+	}
+	t.Log("val ", k)
+
+	// need refresh
+	locCache.Set("c", "ccc", 10*time.Second, ItemOptions{
+		NeedRefresh: true,
+	})
+	time.Sleep(9 * time.Second)
+
+	k, ok = locCache.Get("c")
+	if !ok {
+		t.Error("Bad TestSet4")
+	} else {
+		if k != "ccc" {
+			t.Error("Expected not this")
+		}
+	}
+
+	// wait more time (> 10*time.Second after set operation) to check expiration refresh
+	time.Sleep(6 * time.Second)
+	k, ok = locCache.Get("c")
+	if !ok {
+		t.Error("Bad TestSet5")
+	}
+	t.Log("val ", k)
+
+	///////////////////////////
+	// clean data
 	err := locCache.Delete("a")
 	if err != nil {
-		t.Error("Bad TestSet2")
+		t.Error("Bad TestSet6")
+	}
+	err = locCache.Delete("b")
+	if err != nil {
+		t.Error("Bad TestSet7")
+	}
+	err = locCache.Delete("c")
+	if err != nil {
+		t.Error("Bad TestSet8")
 	}
 }
 
@@ -34,8 +93,8 @@ func TestCacheScenario(t *testing.T) {
 	type ItemTest struct {
 		item        interface{}
 		onCloseF    func(item interface{}) error
-		itemType    reflect.Type
-		needOptions bool
+		NeedOnClose bool
+		NeedRefresh bool
 	}
 
 	tests := []struct {
@@ -55,8 +114,7 @@ func TestCacheScenario(t *testing.T) {
 						fmt.Printf("Close.item: %v, itemType: %v\n", item, reflect.TypeOf(item))
 						return nil
 					},
-					itemType:    reflect.TypeOf(reflect.Int),
-					needOptions: true,
+					NeedOnClose: true,
 				},
 				"test2": {
 					item: "test2 item",
@@ -64,14 +122,13 @@ func TestCacheScenario(t *testing.T) {
 						fmt.Printf("Close.item: %v, itemType: %v\n", item, reflect.TypeOf(item))
 						return nil
 					},
-					itemType:    reflect.TypeOf(reflect.String),
-					needOptions: true,
+					NeedOnClose: true,
 				},
 				"test3": {
 					item: make(chan int),
 					onCloseF: func(item interface{}) error {
 						fmt.Printf("Close.item: %v, itemType: %v\n", item, reflect.TypeOf(item))
-						itemCast, ok := reflect.ValueOf(item).Interface().(chan int)
+						itemCast, ok := item.(chan int)
 						if !ok {
 							return errors.New("bad type cast")
 						}
@@ -79,12 +136,11 @@ func TestCacheScenario(t *testing.T) {
 
 						return nil
 					},
-					itemType:    reflect.TypeOf(reflect.Chan),
-					needOptions: true,
+					NeedOnClose: true,
 				},
 				"test5": {
 					item:        2,
-					needOptions: false,
+					NeedOnClose: false,
 				},
 			},
 		},
@@ -97,7 +153,7 @@ func TestCacheScenario(t *testing.T) {
 					item: &sql.DB{},
 					onCloseF: func(item interface{}) error {
 						fmt.Printf("Close.item: %v, itemType: %v\n", item, reflect.TypeOf(item))
-						itemCast, ok := reflect.ValueOf(item).Interface().(*sql.DB)
+						itemCast, ok := item.(*sql.DB)
 						if !ok {
 							return errors.New("bad type cast")
 						}
@@ -109,8 +165,7 @@ func TestCacheScenario(t *testing.T) {
 
 						return nil
 					},
-					itemType:    reflect.TypeOf(reflect.Chan),
-					needOptions: true,
+					NeedOnClose: true,
 				},
 			},
 		},
@@ -122,9 +177,10 @@ func TestCacheScenario(t *testing.T) {
 			defer LocalCache.ClearAll()
 
 			for k, v := range tt.checkData {
-				if v.needOptions {
+				if v.NeedOnClose {
 					LocalCache.Set(k, v.item, 5*time.Second, ItemOptions{
-						onDeleteFunc: v.onCloseF,
+						OnDeleteFunc: v.onCloseF,
+						NeedOnDelete: true,
 					})
 				} else {
 					LocalCache.Set(k, v.item, 5*time.Second)
