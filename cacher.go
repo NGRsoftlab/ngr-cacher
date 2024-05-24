@@ -29,8 +29,10 @@ type Item struct {
 
 // ItemOptions - item type info and on-delete func
 type ItemOptions struct {
-	setSign      bool
-	onDeleteFunc func(item interface{}) error
+	NeedOnDelete    bool
+	OnDeleteFunc    func(item interface{}) error
+	NeedRefresh     bool
+	refreshDuration time.Duration
 }
 
 // New Initializing a new memory cache
@@ -54,8 +56,8 @@ func New(defaultExpiration, cleanupInterval time.Duration) *Cache {
 // onDeleteProcessItem - on delete action wrapper (experimental)
 func (p *Item) processItemOnDeleteFunc() {
 	defer panicRecover()
-	if p.Options.setSign {
-		err := p.Options.onDeleteFunc(p.Value)
+	if p.Options.NeedOnDelete {
+		err := p.Options.OnDeleteFunc(p.Value)
 		if err != nil {
 			fmt.Println("item onDeleteFunc error: ", err.Error())
 		}
@@ -89,8 +91,10 @@ func (c *Cache) Set(key string, value interface{}, duration time.Duration, optio
 	// set into item options only 1st options object
 	itemOptions := ItemOptions{}
 	if len(options) > 0 {
-		itemOptions.setSign = true
-		itemOptions.onDeleteFunc = options[0].onDeleteFunc
+		itemOptions.NeedOnDelete = options[0].NeedOnDelete
+		itemOptions.OnDeleteFunc = options[0].OnDeleteFunc
+		itemOptions.NeedRefresh = options[0].NeedRefresh
+		itemOptions.refreshDuration = duration
 	}
 
 	c.items[key] = Item{
@@ -114,12 +118,18 @@ func (c *Cache) Get(key string) (interface{}, bool) {
 		return nil, false
 	}
 
+	// item expired processing
 	if item.Expiration > 0 {
 		// cache expired
 		if time.Now().UnixNano() > item.Expiration {
 			return nil, false
 		}
+	}
 
+	// refresh expiration if need
+	if item.Options.NeedRefresh {
+		item.Expiration = time.Now().Add(item.Options.refreshDuration).UnixNano()
+		c.items[key] = item
 	}
 
 	return item.Value, true
@@ -128,12 +138,13 @@ func (c *Cache) Get(key string) (interface{}, bool) {
 ////////////////////////////////////////// Keys-Items
 
 // GetItems returns items list
-func (c *Cache) GetItems() (items []string) {
+func (c *Cache) GetItems() (items []interface{}) {
 	c.RLock()
 	defer c.RUnlock()
 
 	for k := range c.items {
-		items = append(items, k)
+		item, _ := c.Get(k)
+		items = append(items, item)
 	}
 
 	return
@@ -142,7 +153,6 @@ func (c *Cache) GetItems() (items []string) {
 // GetKeys returns key list
 func (c *Cache) GetKeys() (keys []string) {
 	c.RLock()
-
 	defer c.RUnlock()
 
 	for k := range c.items {
@@ -155,7 +165,6 @@ func (c *Cache) GetKeys() (keys []string) {
 // ExpiredKeys returns key list which are expired
 func (c *Cache) ExpiredKeys() (keys []string) {
 	c.RLock()
-
 	defer c.RUnlock()
 
 	for k, i := range c.items {
@@ -170,7 +179,6 @@ func (c *Cache) ExpiredKeys() (keys []string) {
 // clearItems removes all the items which key in keys.
 func (c *Cache) clearItems(keys []string) {
 	c.Lock()
-
 	defer c.Unlock()
 
 	for _, k := range keys {
